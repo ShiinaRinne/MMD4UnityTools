@@ -1,3 +1,4 @@
+using System;
 using MMDExtensions.Tools;
 using System.IO;
 using System.Linq;
@@ -13,7 +14,7 @@ namespace MMDExtensions
         /// <summary>
         /// Create camera animation assets
         /// </summary>
-        [MenuItem("Assets/MMDExtensions/Animation/Create/Camera Animation From VMD")]
+        [MenuItem("Assets/MMDExtensions/Camera Animation From VMD")]
         public static void CreateCameraAnimation()
         {
             string path = AssetDatabase.GetAssetPath(Selection.activeObject);
@@ -25,42 +26,43 @@ namespace MMDExtensions
                 var vmd = VMDParser.ParseVMD(stream);
 
                 var orderedFrames = from frame in vmd.Cameras
-                                    orderby frame.FrameIndex
-                                    select frame;
+                    orderby frame.FrameIndex
+                    select frame;
                 var animationClip = new AnimationClip()
                 {
                     frameRate = 30,
                 };
 
                 var delta = 1 / animationClip.frameRate;
-                var scale = 0.085f;//1.76f / 2f;
+                var scale = 0.085f; //1.76f / 2f;
 
                 var quaternions = from frame in orderedFrames
-                                  select new
-                                  {
-                                      Time = frame.FrameIndex * delta,
-                                      Quaternion = Quaternion.Euler(new Vector3(frame.XRotation * Mathf.Rad2Deg, frame.YRotation * Mathf.Rad2Deg, frame.ZRotation * Mathf.Rad2Deg)),
-                                      OutTangent = Mathf.Lerp(-1, 1, frame.Curve.AY / 127),
-                                  };
+                    select new
+                    {
+                        Time = frame.FrameIndex * delta,
+                        Quaternion = Quaternion.Euler(new Vector3(frame.XRotation * Mathf.Rad2Deg,
+                            frame.YRotation * Mathf.Rad2Deg, frame.ZRotation * Mathf.Rad2Deg)),
+                        OutTangent = Mathf.Lerp(-1, 1, frame.Curve.AY / 127),
+                    };
 
                 var q = quaternions.First().Quaternion;
 
                 var xPosition = from position in orderedFrames
-                                select new Keyframe(position.FrameIndex * delta, position.XPosition * scale);
+                    select new Keyframe(position.FrameIndex * delta, position.XPosition * scale);
                 var YPosition = from position in orderedFrames
-                                select new Keyframe(position.FrameIndex * delta, position.YPosition * scale);
+                    select new Keyframe(position.FrameIndex * delta, position.YPosition * scale);
                 var ZPosition = from position in orderedFrames
-                                select new Keyframe(position.FrameIndex * delta, position.ZPosition * scale);
+                    select new Keyframe(position.FrameIndex * delta, position.ZPosition * scale);
                 var XRoation = from quaternion in quaternions
-                               select new Keyframe(quaternion.Time, quaternion.Quaternion.x);
+                    select new Keyframe(quaternion.Time, quaternion.Quaternion.x);
                 var YRoation = from quaternion in quaternions
-                               select new Keyframe(quaternion.Time, quaternion.Quaternion.y);
+                    select new Keyframe(quaternion.Time, quaternion.Quaternion.y);
                 var ZRoation = from quaternion in quaternions
-                               select new Keyframe(quaternion.Time, quaternion.Quaternion.z);
+                    select new Keyframe(quaternion.Time, quaternion.Quaternion.z);
                 var WRoation = from quaternion in quaternions
-                               select new Keyframe(quaternion.Time, quaternion.Quaternion.w);
+                    select new Keyframe(quaternion.Time, quaternion.Quaternion.w);
                 var fov = from frame in orderedFrames
-                          select new Keyframe(frame.FrameIndex * delta, (float)frame.FOV);
+                    select new Keyframe(frame.FrameIndex * delta, (float) frame.FOV);
 
                 var xPostionCurve = new AnimationCurve(xPosition.ToArray());
                 var yPostionCurve = new AnimationCurve(YPosition.ToArray());
@@ -79,18 +81,19 @@ namespace MMDExtensions
                 animationClip.SetCurve("", typeof(Transform), "localRotation.w", wRotationCurve);
                 animationClip.SetCurve("", typeof(Camera), "field of view", fovCurve);
 
-                AssetDatabase.CreateAsset(animationClip, path.Replace("vmd", "anim"));//"Assets/VMDCamera.anim");
+                AssetDatabase.CreateAsset(animationClip, path.Replace("vmd", "anim")); //"Assets/VMDCamera.anim");
             }
         }
 
         /// <summary>
         /// Create morph animation assets
         /// </summary>
-        [MenuItem("Assets/MMDExtensions/Animation/Create/Create Morph Animation")]
+        [MenuItem("Assets/MMDExtensions/Create Morph Animation")]
         public static void CreateMorphAnimation()
         {
             System.GC.Collect();
-            string path = AssetDatabase.GetAssetPath(Selection.GetFiltered<DefaultAsset>(SelectionMode.Assets).FirstOrDefault());
+            string path =
+                AssetDatabase.GetAssetPath(Selection.GetFiltered<DefaultAsset>(SelectionMode.Assets).FirstOrDefault());
 
             if (Path.GetExtension(path).ToUpper().Contains("VMD"))
             {
@@ -98,12 +101,13 @@ namespace MMDExtensions
 
                 var vmd = VMDParser.ParseVMD(stream);
 
-                var animationClip = new AnimationClip() { frameRate = 30 };
+                var animationClip = new AnimationClip() {frameRate = 30};
 
                 var delta = 1 / animationClip.frameRate;
 
-                var keyframes = from keys in vmd.Morphs.ToLookup(k => k.MorphName, v => new Keyframe(v.FrameIndex * delta, v.Weight * 100))
-                                select keys;
+                var keyframes = from keys in vmd.Morphs.ToLookup(
+                            k => k.MorphName,
+                            v => new Keyframe(v.FrameIndex * delta, v.Weight * 100)) select keys;
 
                 foreach (var package in keyframes)
                 {
@@ -116,16 +120,55 @@ namespace MMDExtensions
 
                     var mesh = gameobject.GetComponent<SkinnedMeshRenderer>().sharedMesh;
                     var bsCounts = mesh.blendShapeCount;
-                    var blendShapeNames = Enumerable.Range(0, bsCounts).ToList().ConvertAll(index => mesh.GetBlendShapeName(index));
+                    var blendShapeNames = Enumerable.Range(0, bsCounts).ToList()
+                        .ConvertAll(index => mesh.GetBlendShapeName(index));
+
+                    // ================================================================================================================
+                    // ym change
+                    // to support group blendshapes
+                    // ================================================================================================================
+                    string registerName = "";
+
                     try
                     {
-                        var registerName = blendShapeNames.Where(x => x.Split('.').Last() == name).First();
-                        animationClip.SetCurve($"{parentName}/{gameObjectName}", typeof(SkinnedMeshRenderer), $"blendShape.{registerName}", curve);
+                        if (name == "まばたき")
+                        {
+                            registerName = blendShapeNames.Where(x => x.Split('.').Last() == "ウィンク２").First();
+                            animationClip.SetCurve($"{parentName}/{gameObjectName}", typeof(SkinnedMeshRenderer),
+                                $"blendShape.{registerName}", curve);
+                            registerName = blendShapeNames.Where(x => x.Split('.').Last() == "ｳｨﾝｸ２右").First();
+                            animationClip.SetCurve($"{parentName}/{gameObjectName}", typeof(SkinnedMeshRenderer),
+                                $"blendShape.{registerName}", curve);
+                            continue;
+                        }
+                        if (name == "笑い")
+                        {
+                            registerName = blendShapeNames.Where(x => x.Split('.').Last() == "ウィンク").First();
+                            animationClip.SetCurve($"{parentName}/{gameObjectName}", typeof(SkinnedMeshRenderer),
+                                $"blendShape.{registerName}", curve);
+                            registerName = blendShapeNames.Where(x => x.Split('.').Last() == "ウィンク右").First();
+                            animationClip.SetCurve($"{parentName}/{gameObjectName}", typeof(SkinnedMeshRenderer),
+                                $"blendShape.{registerName}", curve);
+                            continue;
+                        }
+                        if (name == "ウィンク２" || name == "ｳｨﾝｸ２右" || name == "ウィンク" || name == "ウィンク右")
+                        {
+                            if (package.ToArray().Length<=1)
+                            {
+                                continue;
+                            }
+                        }
+                        
+                        registerName = blendShapeNames.Where(x => x.Split('.').Last() == name).First();
+                        animationClip.SetCurve($"{parentName}/{gameObjectName}", typeof(SkinnedMeshRenderer),
+                            $"blendShape.{registerName}", curve);
+                        
                     }
-                    catch
+                    catch (Exception e)
                     {
-                        continue;
+                        // Debug.Log($"Error: {e.Message}");
                     }
+                    // ================================================================================================================
                 }
 
                 AssetDatabase.CreateAsset(animationClip, path.Replace("vmd", "anim"));
